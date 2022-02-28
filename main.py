@@ -66,7 +66,7 @@ class MineSweeper:
         A move is valid when:
         > The x and y coordinates are separated by a ' ' in the input string
         > The x and y coordinates reflect a position on the board
-        > The selected block on the board is a valid block.
+        > The selected block is a valid block.
         """
 
         try:
