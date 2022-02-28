@@ -126,7 +126,7 @@ class MineSweeper:
     def get_block_representation(self, block_position: tuple, get_true_representation=False) -> str:
         """Returns the block representation.
 
-        :param block_position: the block position as a dictionary with its x and y values as keys.
+        :param block_position: the block position as a tuple with its x and y values as keys.
         :param get_true_representation: in case is set to True, the function will return the true representation of
         the block.
         """
