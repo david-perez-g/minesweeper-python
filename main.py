@@ -215,7 +215,7 @@ class MineSweeper:
     def is_game_over(self) -> str:
         """A game is over when a mine is discovered, or all the other blocks have been discovered.
         The function returns:
-         > "player-pressed" in case the user found a mine.
+         > "player-pressed-mine" in case the user found a mine.
          > '' in case the game is not finished yet.
          > "game-completed" in case the user finished the game successfully.
         """
