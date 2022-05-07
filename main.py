@@ -1,34 +1,69 @@
-"""A minesweeper implementation in Python"""
-
 from typing import List
 from time import sleep
+from enum import Enum, auto
 import random
+
+from soupsieve import select
 import config
+
+# Block representations
+MINE = '#'
+NO_SURROUNDING_MINES = '·'
+UNKNOWN_BLOCK = ' '
+
+
+class MoveResult(Enum):
+    FOUND_MINE = auto()
+    ALL_OK = auto()
+
+
+class BlockType(Enum):
+    MINE = auto()
+    NORMAL = auto()
+
+
+class BlockVisibility:
+    VISIBLE = auto()
+    INVISIBLE = auto()
+
+
+class Position:
+    def __init__(self, move: str):
+        self.x, self.y = tuple(
+            map(lambda x: int(x), move.split(' '))
+        )
 
 
 class Block:
-    """A block of the board"""
-
-    def __init__(self, type_: str):
-        """
-        :param type_: can be either "mine" or "normal"
-        """
-        self.type = type_
-        self.is_visible = False
+    def __init__(self, type_: BlockType):
+        self.type_ = type_
+        self.visibility = BlockVisibility.INVISIBLE
 
     def is_mine(self) -> bool:
-        return self.type == 'mine'
+        return self.type_ == BlockType.MINE
 
     def is_normal(self) -> bool:
-        return self.type == 'normal'
+        return self.type_ == BlockType.NORMAL
+
+    def is_visible(self) -> bool:
+        return self.visibility == BlockVisibility.VISIBLE
+
+    def is_invisible(self) -> bool:
+        return self.visibility == BlockVisibility.INVISIBLE
+
+    def make_visible(self) -> None:
+        self.visibility = BlockVisibility.VISIBLE
 
 
-class MineSweeper:
+class Board:
     def __init__(self, board_width: int, board_height: int, number_of_mines: int):
-        self.board_width = board_width
-        self.board_height = board_height
+        self.width = board_width - 1
+        self.height = board_height - 1
         self.number_of_mines = number_of_mines
-        self.board = self.make_board(board_width, board_height, number_of_mines)
+        self.unseen_blocks = (board_width * board_height) - number_of_mines
+        self.board = self.make_board(
+            board_width, board_height, number_of_mines
+        )
 
     @staticmethod
     def make_board(board_width: int, board_height: int, number_of_mines: int) -> List[List[Block]]:
@@ -39,26 +74,126 @@ class MineSweeper:
         proportions.
         """
         # Creating board with no bombs
-        board = [[Block('normal') for _ in range(board_width)] for _ in range(board_height)]
+        board = [[Block(BlockType.NORMAL) for _ in range(board_width)]
+                 for _ in range(board_height)]
 
         # Placing bombs
         n = 0
         while n < number_of_mines:
             mine_x_location = random.randint(0, board_width - 1)
             mine_y_location = random.randint(0, board_height - 1)
+
+            # block is already a mine
             if board[mine_y_location][mine_x_location].is_mine():
-                # block is already a mine
                 continue
-            board[mine_y_location][mine_x_location] = Block('mine')
+
+            board[mine_y_location][mine_x_location] = Block(BlockType.MINE)
             n += 1
 
         return board
 
-    @staticmethod
-    def convert_move_to_tuple(move: str) -> tuple:
-        """Takes a (valid) move with the x and y coordinates and returns them as a tuple."""
+    def is_in_valid_height_range(self, num: int) -> bool:
+        return 0 <= num <= self.height
 
-        return tuple(map(lambda x: int(x), move.split(' ')))
+    def is_in_valid_width_range(self, num: int) -> bool:
+        return 0 <= num <= self.width
+
+    def get_block(self, position: Position) -> Block:
+        return self.board[position.y][position.x]
+
+    def get_block_near_bombs(self, position: Position) -> int:
+        """Get a block near bombs"""
+
+        num_of_near_bombs = 0
+        for y in range(position.y - 1, position.y + 2):
+            for x in range(position.x - 1, position.x + 2):
+                # checking if x and y are valid values
+                if (not self.is_in_valid_height_range(y)) or (not self.is_in_valid_width_range(x)):
+                    continue
+
+                if self.board[y][x].is_mine():
+                    num_of_near_bombs += 1
+
+        return num_of_near_bombs
+
+    def get_block_true_repr(self, position: Position):
+        """Returns the block true representation"""
+
+        block = self.get_block(position)
+
+        if block.is_mine():
+            return MINE
+
+        near_bombs = self.get_block_near_bombs(position)
+        if near_bombs == 0:
+            return NO_SURROUNDING_MINES
+
+        return str(near_bombs)
+
+    def get_block_repr(self, position: Position, get_true_representation=False) -> str:
+        """Returns the block representation"""
+
+        block = self.get_block(position)
+
+        if block.is_invisible():
+            return UNKNOWN_BLOCK
+
+        if block.is_mine():
+            return MINE
+
+        block_near_bombs = self.get_block_near_bombs(position)
+
+        if not block_near_bombs:
+            return NO_SURROUNDING_MINES
+
+        return str(block_near_bombs)
+
+    def print_board(self, game_finished=False) -> None:
+        """Prints the board to the console."""
+
+        height = self.height + 1
+        width = self.width + 1
+
+        def draw_line(line: str, repetitions: int) -> None:
+            """Draws a line of the board."""
+
+            print('      ', end='')
+
+            for _ in range(repetitions - 1):
+                print(line, end='')
+
+            print(line + line[0])
+
+        draw_line(' _____', width)
+
+        for y in range(height):
+            draw_line('|     ', width)
+
+            print(f'   {y}  ', end='')
+            for x in range(width):
+                position = Position(f'{x} {y}')
+                if not game_finished:
+                    block_repr = self.get_block_repr(position)
+                else:
+                    block_repr = self.get_block_true_repr(position)
+
+                print(f'|  {block_repr}  ', end='')
+
+            print('|')
+
+            draw_line('|_____', width)
+
+        print('      ', end='')
+        for x in range(width):
+            print(f'   {x}  ', end='')
+
+        print()
+
+
+class GameDriver:
+    def __init__(self, board_width: int, board_height: int, number_of_mines: int):
+        self.game_board = Board(board_width, board_height, number_of_mines)
+        self.unseen_blocks = board_height * board_width - number_of_mines
 
     def is_valid_move(self, move: str) -> bool:
         """Detects if a user move is valid.
@@ -74,203 +209,106 @@ class MineSweeper:
         except ValueError:
             return False
 
+        # x and y are digits
         if not (x.isdigit() and y.isdigit()):
             return False
 
         x, y = int(x), int(y)
 
         # x and y are valid coordinates
-        if (not (0 <= x <= self.board_width - 1)) or (not (0 <= y <= self.board_height - 1)):
+        if (not self.game_board.is_in_valid_width_range(x)) or (not self.game_board.is_in_valid_height_range(y)):
             return False
 
-        # checking if the block is valid
-        return not self.board[y][x].is_visible
+        # checking if the block is already seen
+        return self.game_board.board[y][x].is_invisible()
 
-    def request_move(self) -> str:
+    def request_move(self) -> Position:
         """
         Requests a move to the user. The function will keep doing this until a valid
-        move or 'q' (meaning the end of the game) is entered. If the user enters 'q' the
-        function will return ''.
+        move or 'q' (meaning the end of the game) is entered. If the user enters 'q'
+        the program will end.
+        When the user enters a valid move it will be put on a Position object.
         """
 
         while True:
-            move = input('Please make your move -> ')
+            move = input('\nMake your move -> ')
+
             if move == 'h':
-                print('A valid move would look like this:\n4 5\nWhere the first digit and the second digit are the '
-                      'coordinates (x and y) of your move. Of course this digits have to be valid in the game context.')
+                print('A valid move would look like this:\n4 5\n'
+                      'Where the first digit and the second digit are the '
+                      'coordinates (x and y) of your move.\n'
+                      'Of course this digits have to represent a valid move in the board.')
                 continue
+
             elif move == 'q':
-                return ''
+                print('\nEnding game ... :(\n')
+                exit(0)
+
             elif self.is_valid_move(move):
-                return move
+                return Position(move)
 
             print("Invalid move. Please insert a valid move. You can also get help by pressing 'h' or 'q' "
                   "to end the game.")
 
-    def get_block_near_bombs(self, block_position: tuple) -> int:
-        """Get a block near bombs."""
-
-        x_position, y_position = block_position
-        num_of_near_bombs = 0
-        for y in range(y_position - 1, y_position + 2):
-            for x in range(x_position - 1, x_position + 2):
-                # checking if x and y are valid values
-                if (not (0 <= y <= self.board_height - 1)) or (not (0 <= x <= self.board_width - 1)):
-                    continue
-
-                if self.board[y][x].is_mine():
-                    num_of_near_bombs += 1
-
-        return num_of_near_bombs
-
-    def get_block_representation(self, block_position: tuple, get_true_representation=False) -> str:
-        """Returns the block representation.
-
-        :param block_position: the block position as a tuple with its x and y values as keys.
-        :param get_true_representation: in case is set to True, the function will return the true representation of
-        the block.
+    def do_move(self, move: Position) -> MoveResult:
         """
-        x, y = block_position
-        block = self.board[y][x]
+        Does the requested move.
+        If the player found a mine the function will return MoveResult.FOUND_MINE otherwise MoveResult.ALL_OK
+        """
 
-        if get_true_representation:
-            if block.is_mine():
-                return '#'
-
-            near_bombs = self.get_block_near_bombs(block_position)
-            if not near_bombs:
-                return '·'
-
-            return str(near_bombs)
-
-        if block.is_visible:
-            if block.is_mine():
-                return '#'
-
-            block_near_bombs = self.get_block_near_bombs(block_position)
-
-            if not block_near_bombs:
-                return '·'
-
-            return str(block_near_bombs)
-
-        return ' '
-
-    def print_board(self, game_finished=False):
-        """Prints the board to the console."""
-
-        def draw_line(line: str, repetitions: int) -> None:
-            """Draws a line of the board."""
-
-            print('      ', end='')
-
-            for _ in range(repetitions - 1):
-                print(line, end='')
-
-            print(line + line[0])
-
-        draw_line(' _____', self.board_width)
-
-        for y in range(self.board_height):
-            draw_line('|     ', self.board_width)
-
-            print(f'   {y}  ', end='')
-            for x in range(self.board_width):
-                block = self.get_block_representation(self.convert_move_to_tuple(f'{x} {y}'), game_finished)
-
-                print(f'|  {block}  ', end='')
-
-            print('|')
-
-            draw_line('|_____', self.board_width)
-
-        print('      ', end='')
-        for x in range(self.board_width):
-            print(f'   {x}  ', end='')
-
-        print()
-
-    def do_move(self, move: tuple) -> None:
-        """Does the requested move and recursively applies its consequences to the board"""
-
-        x, y = move
-        self.board[y][x].is_visible = True
-        if self.board[y][x].is_mine():
-            return None
+        self.game_board.board[move.y][move.x].make_visible()
+        self.unseen_blocks -= 1
+        if self.game_board.get_block(move).is_mine():
+            return MoveResult.FOUND_MINE
 
         # the block has bombs near
-        if self.get_block_near_bombs(move):
-            return None
+        if self.game_board.get_block_near_bombs(move) > 0:
+            return MoveResult.ALL_OK
 
-        for y_ in range(y - 1, y + 2):
-            for x_ in range(x - 1, x + 2):
+        # if the block has no bombs near, the function will recursively explore
+        # the surrounding blocks and reveal them
+        for y in range(move.y - 1, move.y + 2):
+            for x in range(move.x - 1, move.x + 2):
                 # checking if x and y are valid values
-                if (not (0 <= y_ <= self.board_height - 1)) or (not (0 <= x_ <= self.board_width - 1)):
+                if (not self.game_board.is_in_valid_height_range(y)) or (not self.game_board.is_in_valid_width_range(x)):
                     continue
 
                 # is another normal block
-                if not self.board[y_][x_].is_visible:
-                    self.do_move((x_, y_))
+                if self.game_board.board[y][x].is_invisible():
+                    self.do_move(Position(f'{x} {y}'))
 
-    def is_game_over(self) -> str:
-        """A game is over when a mine is discovered, or all the other blocks have been discovered.
-        The function returns:
-         > "player-pressed-mine" in case the user found a mine.
-         > '' in case the game is not finished yet.
-         > "game-completed" in case the user finished the game successfully.
-        """
-        normal_block_unseen = False
-        for blocks in self.board:
-            for block in blocks:
-                if block.is_mine() and block.is_visible:
-                    return 'player-pressed-mine'
-                if block.is_normal() and (not block.is_visible):
-                    normal_block_unseen = True
+        return MoveResult.ALL_OK
 
-        if normal_block_unseen:
-            return ''
+    def is_game_over(self) -> bool:
+        """Evaluates if the game is over"""
 
-        return 'game-completed'
+        return self.unseen_blocks == 0
 
-    @staticmethod
-    def print_game_over() -> None:
-        """Prints GAME OVER in a very fancy way."""
-
-        print()
-        for letter in 'G A M E  O V E R ...':
-            print(letter, end='')
-            sleep(.2)
-
-        sleep(2)
-
-    def drive_game(self):
+    def start(self):
         print('WELCOME TO MINESWEEPER!\n\nBy: david-perez-g\nhttps://github.com/david-perez-g/')
         sleep(2)
+        print(f'\nStarting a game with a {self.game_board.width + 1}x{self.game_board.height + 1} '
+              f'board and {self.game_board.number_of_mines} mines.')
+
         while True:
-            self.print_board()
+            self.game_board.print_board()
             move = self.request_move()
-            # user entered 'q'
-            if not move:
-                print('Ending game ...')
+            result = self.do_move(move)
+
+            if result == MoveResult.FOUND_MINE:
+                self.game_board.print_board(game_finished=True)
+                print('\nGame over... :(\n')
                 break
 
-            self.do_move(self.convert_move_to_tuple(move))
-
-            game_state = self.is_game_over()
-            # game not finished yet
-            if not game_state:
-                continue
-
-            if game_state == 'player-pressed-mine':
-                self.print_board(game_finished=True)
-                self.print_game_over()
+            if self.is_game_over():
+                print('\nCongrats! You finished the game :)')
+                self.game_board.print_board(game_finished=True)
                 break
-
-            self.print_board(game_finished=True)
-            print('\nCongrats! You finished the game :)')
-            break
 
 
 if __name__ == '__main__':
-    minesweeper = MineSweeper(config.BOARD_WIDTH, config.BOARD_HEIGHT, config.NUMBER_OF_MINES)
-    minesweeper.drive_game()
+    game_driver = GameDriver(
+        config.BOARD_WIDTH, config.BOARD_HEIGHT, config.NUMBER_OF_MINES
+    )
+
+    game_driver.start()
